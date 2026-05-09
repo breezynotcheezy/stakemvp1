@@ -1,15 +1,16 @@
 # Poker Table Visual Parser
 
-Hybrid visual parser for reliable poker table detection using template matching and OCR.
+Hybrid visual parser for reliable poker table detection using automatic card recognition, template matching, and OCR.
 
 ## Architecture
 
 1. **Screen Region Calibration** - User selects fixed zones once
-2. **Card Template Matching** - Image templates for all 52 cards
-3. **OCR for Numbers** - Pot, stack, and bet sizes only
-4. **State Tracking** - Time-based confirmation (2-3 readings)
-5. **Stack Delta Inference** - Calculate bets from stack changes
-6. **Hand State Machine** - Validate against poker rules
+2. **Automatic Card Recognition** - AI detects cards using color detection and OCR (no templates required!)
+3. **Optional Card Templates** - Manual templates for improved accuracy (optional)
+4. **OCR for Numbers** - Pot, stack, and bet sizes only
+5. **State Tracking** - Time-based confirmation (2-3 readings)
+6. **Stack Delta Inference** - Calculate bets from stack changes
+7. **Hand State Machine** - Validate against poker rules
 
 ## Setup
 
@@ -21,9 +22,22 @@ pip install -r requirements.txt
 
 ```bash
 python calibrate_regions.py  # First: calibrate screen regions
-python create_card_templates.py  # Second: create card templates from screenshots
-python main.py  # Run the parser
+python main.py run           # Run the parser (auto-recognition enabled by default)
 ```
+
+**Optional:** Create manual card templates for improved accuracy
+```bash
+python create_card_templates.py  # Optional: create card templates from screenshots
+```
+
+## Automatic Card Recognition
+
+The system now automatically recognizes cards without requiring manual templates:
+
+- **Suit Detection**: Uses HSV color analysis to detect red (hearts/diamonds) vs black (clubs/spades)
+- **Rank Detection**: Uses OCR to read the rank character (A, K, Q, J, T, 9, 8, etc.) from card corners
+- **Shape Analysis**: Uses contour detection to distinguish between similar suit symbols
+- **Confidence Scoring**: Provides confidence scores for each recognition
 
 ## Requirements
 

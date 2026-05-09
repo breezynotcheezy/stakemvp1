@@ -1,12 +1,14 @@
 """
 Card Template Matching System
 Uses image template matching instead of OCR for card detection
+Also includes automatic card recognition using color detection and OCR
 """
 
 import cv2
 import numpy as np
 import os
 import json
+import pytesseract
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
@@ -18,11 +20,18 @@ class CardTemplateMatcher:
     SUITS = ['h', 'd', 'c', 's']  # hearts, diamonds, clubs, spades
     RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
     
-    def __init__(self, templates_dir: str = "card_templates"):
+    def __init__(self, templates_dir: str = "card_templates", use_auto_recognition: bool = True):
         self.templates_dir = Path(templates_dir)
         self.templates_dir.mkdir(exist_ok=True)
         self.templates: Dict[str, np.ndarray] = {}
         self.match_threshold = 0.8
+        self.use_auto_recognition = use_auto_recognition
+        
+        # Initialize auto recognizer if enabled
+        if self.use_auto_recognition:
+            self.auto_recognizer = AutomaticCardRecognizer()
+        else:
+            self.auto_recognizer = None
         
     def load_templates(self) -> bool:
         """Load all card templates from directory"""
@@ -53,31 +62,33 @@ class CardTemplateMatcher:
     
     def match_card(self, card_image: np.ndarray) -> Optional[Tuple[str, float]]:
         """
-        Match a card image against templates
+        Match a card image against templates or use auto-recognition
         Returns (card_name, confidence) or None if no match
         """
-        if not self.templates:
-            if not self.load_templates():
-                return None
-        
-        best_match = None
-        best_confidence = 0.0
-        
-        for card_name, template in self.templates.items():
-            # Resize template to match card image if needed
-            if template.shape != card_image.shape:
-                template = cv2.resize(template, (card_image.shape[1], card_image.shape[0]))
+        # Try template matching first if templates are available
+        if self.templates:
+            best_match = None
+            best_confidence = 0.0
             
-            # Template matching
-            result = cv2.matchTemplate(card_image, template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, _ = cv2.minMaxLoc(result)
+            for card_name, template in self.templates.items():
+                # Resize template to match card image if needed
+                if template.shape != card_image.shape:
+                    template = cv2.resize(template, (card_image.shape[1], card_image.shape[0]))
+                
+                # Template matching
+                result = cv2.matchTemplate(card_image, template, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                
+                if max_val > best_confidence:
+                    best_confidence = max_val
+                    best_match = card_name
             
-            if max_val > best_confidence:
-                best_confidence = max_val
-                best_match = card_name
+            if best_confidence >= self.match_threshold:
+                return best_match, best_confidence
         
-        if best_confidence >= self.match_threshold:
-            return best_match, best_confidence
+        # Fall back to auto-recognition if enabled
+        if self.auto_recognizer:
+            return self.auto_recognizer.recognize_card(card_image)
         
         return None
     
@@ -134,6 +145,198 @@ class CardTemplateMatcher:
             "match_threshold": self.match_threshold,
             "available_cards": list(self.templates.keys())
         }
+
+
+class AutomaticCardRecognizer:
+    """
+    Automatically recognizes cards using color detection and OCR
+    No manual templates required - the AI figures out the cards itself
+    """
+    
+    # Card suits and ranks
+    SUITS = ['h', 'd', 'c', 's']  # hearts, diamonds, clubs, spades
+    RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
+    
+    def __init__(self, tesseract_path: Optional[str] = None):
+        if tesseract_path:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        
+        # OCR configuration for single character recognition
+        self.rank_config = r'--oem 3 --psm 10 -c tessedit_char_whitelist=AKQJT98765432'
+    
+    def recognize_card(self, card_image: np.ndarray) -> Optional[Tuple[str, float]]:
+        """
+        Automatically recognize a card using color detection and OCR
+        Returns (card_name, confidence) or None if recognition fails
+        """
+        try:
+            # Detect suit color (red or black)
+            suit_color = self._detect_suit_color(card_image)
+            
+            # Detect rank using OCR
+            rank = self._detect_rank(card_image)
+            
+            # Detect specific suit symbol
+            suit = self._detect_suit_symbol(card_image, suit_color)
+            
+            if rank and suit:
+                card_name = f"{rank}{suit}"
+                confidence = self._calculate_confidence(card_image, rank, suit)
+                return card_name, confidence
+            
+            return None
+        except Exception as e:
+            print(f"Auto-recognition error: {e}")
+            return None
+    
+    def _detect_suit_color(self, card_image: np.ndarray) -> Optional[str]:
+        """
+        Detect if suit is red or black based on color analysis
+        Returns 'red', 'black', or None
+        """
+        # Convert to HSV for better color detection
+        hsv = cv2.cvtColor(card_image, cv2.COLOR_BGR2HSV)
+        
+        # Red color range (red wraps around in HSV)
+        red_lower1 = np.array([0, 100, 100])
+        red_upper1 = np.array([10, 255, 255])
+        red_lower2 = np.array([170, 100, 100])
+        red_upper2 = np.array([180, 255, 255])
+        
+        # Black color range
+        black_lower = np.array([0, 0, 0])
+        black_upper = np.array([180, 255, 50])
+        
+        # Count red pixels
+        red_mask1 = cv2.inRange(hsv, red_lower1, red_upper1)
+        red_mask2 = cv2.inRange(hsv, red_lower2, red_upper2)
+        red_pixels = cv2.countNonZero(red_mask1) + cv2.countNonZero(red_mask2)
+        
+        # Count black pixels
+        black_mask = cv2.inRange(hsv, black_lower, black_upper)
+        black_pixels = cv2.countNonZero(black_mask)
+        
+        # Determine color based on pixel counts
+        total_pixels = card_image.shape[0] * card_image.shape[1]
+        
+        if red_pixels > total_pixels * 0.05:  # At least 5% red pixels
+            return 'red'
+        elif black_pixels > total_pixels * 0.05:  # At least 5% black pixels
+            return 'black'
+        
+        return None
+    
+    def _detect_rank(self, card_image: np.ndarray) -> Optional[str]:
+        """
+        Detect card rank using OCR on the corner of the card
+        Returns rank character (A, K, Q, J, T, 9, 8, etc.) or None
+        """
+        # Focus on the top-left corner where rank is typically displayed
+        h, w = card_image.shape[:2]
+        corner_size = min(h, w) // 3
+        corner = card_image[:corner_size, :corner_size]
+        
+        # Preprocess for OCR
+        gray = cv2.cvtColor(corner, cv2.COLOR_BGR2GRAY)
+        
+        # Increase contrast
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        
+        # Threshold
+        _, binary = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # OCR
+        try:
+            text = pytesseract.image_to_string(binary, config=self.rank_config)
+            text = text.strip().upper()
+            
+            # Validate rank
+            if text in self.RANKS:
+                return text
+            
+            # Try to extract valid rank from text
+            for char in text:
+                if char in self.RANKS:
+                    return char
+            
+            return None
+        except Exception as e:
+            print(f"OCR error: {e}")
+            return None
+    
+    def _detect_suit_symbol(self, card_image: np.ndarray, suit_color: Optional[str]) -> Optional[str]:
+        """
+        Detect specific suit symbol using shape analysis
+        Returns suit character (h, d, c, s) or None
+        """
+        if not suit_color:
+            return None
+        
+        # Convert to grayscale
+        gray = cv2.cvtColor(card_image, cv2.COLOR_BGR2GRAY)
+        
+        # Threshold to isolate suit symbols
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Find contours
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Analyze contours to identify suit
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 50 or area > 5000:  # Filter by size
+                continue
+            
+            # Get contour properties
+            perimeter = cv2.arcLength(contour, True)
+            if perimeter == 0:
+                continue
+            
+            approx = cv2.approxPolyDP(contour, 0.04 * perimeter, True)
+            
+            # Count vertices
+            vertices = len(approx)
+            
+            # Shape analysis
+            if suit_color == 'red':
+                # Hearts have rounded top, pointed bottom
+                # Diamonds have 4 vertices
+                if vertices == 4:
+                    return 'd'  # Diamond
+                else:
+                    return 'h'  # Heart (default for red)
+            else:  # black
+                # Clubs have 3 lobes
+                # Spades have pointed top with stem
+                if vertices >= 5:
+                    return 'c'  # Club (more complex shape)
+                else:
+                    return 's'  # Spade (default for black)
+        
+        # Fallback based on color only
+        if suit_color == 'red':
+            return 'h'  # Default to hearts for red
+        else:
+            return 's'  # Default to spades for black
+    
+    def _calculate_confidence(self, card_image: np.ndarray, rank: str, suit: str) -> float:
+        """
+        Calculate confidence score for the recognition
+        Returns float between 0.0 and 1.0
+        """
+        # Base confidence
+        confidence = 0.7
+        
+        # Boost confidence if rank is a common card (2-9)
+        if rank in ['2', '3', '4', '5', '6', '7', '8', '9']:
+            confidence += 0.1
+        
+        # Boost confidence if we have both rank and suit
+        if rank and suit:
+            confidence += 0.1
+        
+        return min(confidence, 1.0)
 
 
 class CardTemplateCreator:

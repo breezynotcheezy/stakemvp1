@@ -31,7 +31,8 @@ class PokerTableParser:
     def __init__(self, tesseract_path: Optional[str] = None):
         # Initialize components
         self.region_calibrator = RegionCalibrator()
-        self.card_matcher = CardTemplateMatcher()
+        # Enable auto-recognition by default - AI figures out cards itself
+        self.card_matcher = CardTemplateMatcher(use_auto_recognition=True)
         self.ocr = NumberOCR(tesseract_path)
         self.multi_ocr = MultiAttemptOCR(self.ocr, attempts=3)
         self.state_manager = TableStateManager()
