@@ -19,8 +19,16 @@ class NumberOCR:
         Initialize OCR
         tesseract_path: Optional path to tesseract executable
         """
-        if tesseract_path:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        self.tesseract_available = True
+        try:
+            if tesseract_path:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+            # Test if tesseract is available
+            pytesseract.get_tesseract_version()
+        except Exception as e:
+            print(f"Warning: Tesseract OCR not available - {e}")
+            print("OCR functions will return None. Install Tesseract for full functionality.")
+            self.tesseract_available = False
         
         # Configure tesseract for number recognition
         self.number_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789.$,'
@@ -48,6 +56,9 @@ class NumberOCR:
         Extract a number from an image region
         Returns float value or None if failed
         """
+        if not self.tesseract_available:
+            return None
+        
         try:
             preprocessed = self.preprocess_image(image)
             
@@ -72,6 +83,9 @@ class NumberOCR:
         Extract a dollar amount from an image region
         Returns float value or None if failed
         """
+        if not self.tesseract_available:
+            return None
+        
         try:
             preprocessed = self.preprocess_image(image)
             
@@ -96,6 +110,9 @@ class NumberOCR:
         Extract text from an image region (for action/timer text)
         Returns string or None if failed
         """
+        if not self.tesseract_available:
+            return None
+        
         try:
             preprocessed = self.preprocess_image(image)
             

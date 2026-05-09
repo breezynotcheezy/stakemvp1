@@ -159,6 +159,10 @@ class HandStateMachine:
         Update pot size
         Returns True if update valid
         """
+        if pot is None:
+            # Pot not detected yet, don't update
+            return True
+        
         if pot < 0:
             print(f"[State Machine] Invalid pot size: {pot}")
             return False

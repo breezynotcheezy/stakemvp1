@@ -158,8 +158,16 @@ class AutomaticCardRecognizer:
     RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
     
     def __init__(self, tesseract_path: Optional[str] = None):
-        if tesseract_path:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        self.tesseract_available = True
+        try:
+            if tesseract_path:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+            # Test if tesseract is available
+            pytesseract.get_tesseract_version()
+        except Exception as e:
+            print(f"Warning: Tesseract OCR not available for card recognition - {e}")
+            print("Card rank detection will fall back to pattern matching.")
+            self.tesseract_available = False
         
         # OCR configuration for single character recognition
         self.rank_config = r'--oem 3 --psm 10 -c tessedit_char_whitelist=AKQJT98765432'
@@ -231,6 +239,11 @@ class AutomaticCardRecognizer:
         Detect card rank using OCR on the corner of the card
         Returns rank character (A, K, Q, J, T, 9, 8, etc.) or None
         """
+        if not self.tesseract_available:
+            # Fallback: return None when Tesseract is not available
+            # In the future, could implement pattern matching as fallback
+            return None
+        
         # Focus on the top-left corner where rank is typically displayed
         h, w = card_image.shape[:2]
         corner_size = min(h, w) // 3

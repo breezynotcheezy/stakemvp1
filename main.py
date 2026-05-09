@@ -237,7 +237,13 @@ class PokerTableParser:
         hero_cards = state.get('hero_cards', [])
         board_cards = state.get('board_cards', [])
         
-        print(f"[{hand_state.upper()}] Pot: ${pot_size:.2f} | Hero: {hero_cards} | Board: {board_cards}")
+        # Format pot_size safely
+        if isinstance(pot_size, (int, float)):
+            pot_str = f"${pot_size:.2f}"
+        else:
+            pot_str = str(pot_size)
+        
+        print(f"[{hand_state.upper()}] Pot: {pot_str} | Hero: {hero_cards} | Board: {board_cards}")
     
     def export_state(self, filepath: str):
         """Export current state to JSON file"""
